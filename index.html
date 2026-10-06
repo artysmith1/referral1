@@ -371,9 +371,9 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
   function activeTariffs(){return singleMode()?['current']:['current','fuse'];}
   function requiredIds(){var ids=[];activeFuels().forEach(function(f){ids.push(f+'-use');activeTariffs().forEach(function(t){ids.push(t+'-'+f+'-rate',t+'-'+f+'-stand');});});return ids;}
   function valid(id){var el=$(id);return el.value.trim()!=='' && el.validity.valid && Number.isFinite(Number(el.value)) && Number(el.value)>=0;}
-  var exportLines=null;
+  var exportLines=null, exportData=null;
   function update(showErrors){
-    exportLines=null;$('export-fallback').hidden=true;$('export-status').textContent='';
+    exportLines=null;exportData=null;$('export-fallback').hidden=true;$('export-status').textContent='';
     var fuels=activeFuels(), single=singleMode();
     $('single-fuse-label').hidden=!single;
     var isFuse=!single||$('single-fuse').checked;
@@ -427,6 +427,7 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
     rows.push(['Total',totals.current,totals.fuse]);
     $('breakdown').replaceChildren();rows.forEach(function(row){if(single)row=row.slice(0,2);var tr=document.createElement('tr');row.forEach(function(v,i){var cell=document.createElement(i===0?'th':'td');if(i===0)cell.scope='row';cell.textContent=i===0?v:gbp.format(v);tr.appendChild(cell);});$('breakdown').appendChild(tr);});
     $('annual-usage').textContent=(single?'Usage used — ':'Usage for both tariffs — ')+annual.join(' · ')+(period!=='365'?'. Annualised from the period selected.':'');
+    exportData={single:single,fuels:fuels,annual:annual,totals:totals,rows:rows,credit:isFuse && $('include-credit').checked,before:single?totals.current:totals.fuse,after:Math.max(0,(single?totals.current:totals.fuse)-100),diff:diff,withCredit:withCredit};
     exportLines=['Energy bill calculation', 'Created: '+new Date().toLocaleString('en-GB'), 'Referral code: RYAN66827', 'https://fuseenergyreferralcode.co.uk/', '', 'Annual usage: '+annual.join(' · '), 'Entered usage period: '+$('usage-period').options[$('usage-period').selectedIndex].text, ''];
     activeTariffs().forEach(function(t){exportLines.push(t==='fuse'?'YOUR FUSE QUOTE':single?($('single-fuse').checked?'YOUR FUSE TARIFF':'YOUR TARIFF'):'YOUR CURRENT TARIFF');fuels.forEach(function(f){exportLines.push((f==='e'?'Electricity':'Gas')+': '+$(t+'-'+f+'-rate').value+'p/kWh; standing charge '+$(t+'-'+f+'-stand').value+'p/day');});exportLines.push('Annual cost: '+gbp.format(totals[t]), 'Average monthly cost: '+gbp.format(totals[t]/12), '');});
     exportLines.push('ANNUAL BREAKDOWN');rows.forEach(function(row){exportLines.push(row[0]+': '+gbp.format(row[1])+(single?'':' current / '+gbp.format(row[2])+' Fuse'));});
@@ -450,7 +451,42 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
   $('export-pdf').addEventListener('click',function(){var report=currentExport();if(!report)return;$('print-report-text').textContent=report;window.print();});
   window.addEventListener('beforeprint',function(){if(exportLines)$('print-report-text').textContent=exportLines.join('\n');else $('print-report-text').textContent='Complete the calculator to print results. Referral code: RYAN66827';});
   $('export-text').addEventListener('click',function(){var report=currentExport();if(!report)return;downloadBlob(new Blob([report],{type:'text/plain;charset=utf-8'}),'energy-calculation-RYAN66827.txt');$('export-status').textContent='Text download started.';});
-  $('export-image').addEventListener('click',function(){var report=currentExport();if(!report)return;try{var canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');canvas.width=1200;ctx.font='24px Arial';var lines=[];report.split('\n').forEach(function(line){var wrapped='';line.split(' ').forEach(function(word){var next=wrapped?wrapped+' '+word:word;if(ctx.measureText(next).width>1080 && wrapped){lines.push(wrapped);wrapped=word;}else wrapped=next;});lines.push(wrapped);});canvas.height=170+lines.length*36;ctx.fillStyle='#fff3e6';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#c2410c';ctx.font='bold 34px Arial';ctx.fillText('Energy bill calculator · RYAN66827',60,65);ctx.fillStyle='#2a1608';ctx.font='24px Arial';lines.forEach(function(line,i){ctx.fillText(line,60,125+i*36);});canvas.toBlob(function(blob){if(!blob){$('export-status').textContent='Image export failed. Please try PDF or text.';return;}downloadBlob(blob,'energy-calculation-RYAN66827.png');$('export-status').textContent='PNG download started, including RYAN66827.';},'image/png');}catch(e){$('export-status').textContent='Image export failed. Please try PDF or text.';}});
+  function drawCalculationImage(data){
+    var canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
+    var width=1200, y=60, ink='#2a1608', muted='#765d4c', orange='#c2410c', green='#19643e';
+    var rateRows=[];data.fuels.forEach(function(f){var name=f==='e'?'Electricity':'Gas';rateRows.push([name+' unit rate','rate',f,'p/kWh'],[name+' standing charge','stand',f,'p/day']);});
+    canvas.width=width;canvas.height=4000;
+    ctx.fillStyle='#fff3e6';ctx.fillRect(0,0,width,canvas.height);
+    function text(value,x,top,size,color,bold,max){ctx.font=(bold?'bold ':'')+size+'px Arial';ctx.fillStyle=color||ink;ctx.textBaseline='top';ctx.fillText(String(value),x,top,max||1080);}
+    function right(value,x,top,size,color,bold){ctx.save();ctx.textAlign='right';text(value,x,top,size,color,bold);ctx.restore();}
+    function box(x,top,w,h,color,radius){ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,top,w,h,radius||18);ctx.fill();}
+    function money(value){return gbp.format(value);}
+    function wrap(value,x,top,max,size,color){ctx.font=size+'px Arial';var line='',offset=0;value.split(' ').forEach(function(word){var next=line?line+' '+word:word;if(ctx.measureText(next).width>max && line){text(line,x,top+offset,size,color);line=word;offset+=size*1.45;}else line=next;});if(line)text(line,x,top+offset,size,color);return offset+size*1.45;}
+    box(60,y,1080,8,orange,4);y+=32;
+    text('RYAN’S ENERGY BILL CALCULATOR',60,y,20,orange,true);y+=38;
+    text(data.single?'Your energy cost estimate':'Your tariff comparison',60,y,48,ink,true);y+=64;
+    text('Based on your usage and the rates you entered',60,y,23,muted);y+=39;
+    text('Created '+new Date().toLocaleDateString('en-GB'),60,y,18,muted);y+=46;
+    box(60,y,1080,72,'#ffdfbd');text('FUSE REFERRAL CODE',84,y+15,15,muted,true);text('RYAN66827',84,y+36,25,orange,true);right('fuseenergyreferralcode.co.uk',1116,y+28,22,ink,false);y+=100;
+    var tariffs=data.single?['current']:['current','fuse'];var cardWidth=data.single?1080:528;
+    tariffs.forEach(function(t,i){var x=60+i*552;box(x,y,cardWidth,164,t==='fuse'?'#c2410c':'#fffaf4');var c=t==='fuse'?'#ffffff':ink;text(data.single?($('single-fuse').checked?'YOUR FUSE TARIFF':'YOUR TARIFF'):t==='fuse'?'FUSE QUOTE':'CURRENT TARIFF',x+24,y+20,18,c,true);text(money(data.totals[t]/12),x+24,y+53,44,c,true,cardWidth-48);text('per month on average',x+24,y+104,19,c);text(money(data.totals[t])+' per year',x+24,y+132,18,c,true);});y+=186;
+    text('Tariff costs above exclude the one-off referral credit.',60,y,18,muted);y+=40;
+    if(!data.single){var same=Math.abs(data.diff)<0.005, saves=data.diff>0;box(60,y,1080,140,same?'#fffaf4':saves?'#e7f5eb':'#ffe3d8');text(same?'NO COST DIFFERENCE':saves?'YOU COULD SAVE':'FUSE WOULD COST MORE',84,y+18,18,saves?green:orange,true);text(same?'Same estimated cost':money(Math.abs(data.diff))+(data.withCredit?' in the first year':' per year'),84,y+48,36,saves?green:ink,true,1032);text(data.withCredit?'Includes £100 one-off referral credit · RYAN66827':'Tariff comparison only · referral credit excluded',84,y+99,19,muted);y+=166;}
+    if(data.credit){box(60,y,1080,186,'#e7f5eb');text('FIRST-YEAR FUSE COST AFTER REFERRAL CREDIT',84,y+20,18,green,true);text(money(data.after),84,y+54,44,green,true);right('−£100 one-off credit',1116,y+66,26,green,true);text('Annual tariff estimate '+money(data.before)+' · Code RYAN66827',84,y+112,21,green);text('Subject to eligibility and receipt of credit in the first year.',84,y+149,18,green);y+=210;}
+    text('YOUR ANNUAL USAGE',60,y,20,orange,true);y+=38;y+=wrap(data.annual.join('  •  '),60,y,1080,24,ink)+24;
+    function tableHeading(title){text(title,60,y,22,ink,true);y+=42;box(60,y,1080,44,'#ffdfbd',8);text('Detail',80,y+12,18,muted,true);right(data.single?'Your tariff':'Current',data.single?1120:850,y+12,18,muted,true);if(!data.single)right('Fuse',1120,y+12,18,muted,true);y+=44;}
+    function row(label,current,fuse,height,total){if(total)box(60,y,1080,height,'#ffdfbd',8);else if(Math.round(y)%2===0)box(60,y,1080,height,'#fffaf4',0);text(label,80,y+14,19,ink,!!total,650);right(current,data.single?1120:850,y+14,20,ink,!!total);if(!data.single)right(fuse,1120,y+14,20,ink,!!total);y+=height;}
+    tableHeading('Tariff rates');rateRows.forEach(function(r){var current=$('current-'+r[2]+'-'+r[1]).value+' '+r[3];var fuse=data.single?'':$('fuse-'+r[2]+'-'+r[1]).value+' '+r[3];row(r[0],current,fuse,54,false);});y+=32;
+    tableHeading('Annual cost breakdown');data.rows.forEach(function(r,i){row(r[0],money(r[1]),data.single?'':money(r[2]),48,i===data.rows.length-1);});y+=32;
+    text('ABOUT THIS ESTIMATE',60,y,18,orange,true);y+=32;
+    y+=wrap('VAT-inclusive rates and usage assumed unchanged over 365 days. Monthly figures are annual tariff costs divided by 12, not a predicted bill or Direct Debit. Single-rate tariffs only; exit fees excluded.',60,y,1080,18,muted)+12;
+    if(data.credit)y+=wrap('Referral credit is bill credit, not cash or an annual discount. Eligibility includes signing up directly with RYAN66827 during a live campaign and paying your first full month’s bill on time. Any unused credit applies to future bills under Fuse’s terms.',60,y,1080,18,muted)+12;
+    y+=wrap('Independent customer calculator. Estimates only, not a supplier quote or guaranteed savings. The referrer also receives a reward. Check current terms at fuseenergy.com.',60,y,1080,18,muted)+26;
+    box(60,y,1080,64,orange);text('Referral code: RYAN66827',84,y+20,24,'#ffffff',true);right('Calculate • Compare • Decide',1116,y+22,20,'#ffffff',false);y+=94;
+    // Crop the spare canvas space after laying out every section.
+    var finalCanvas=document.createElement('canvas');finalCanvas.width=width;finalCanvas.height=y;finalCanvas.getContext('2d').drawImage(canvas,0,0);return finalCanvas;
+  }
+  $('export-image').addEventListener('click',function(){if(!currentExport())return;try{var canvas=drawCalculationImage(exportData);canvas.toBlob(function(blob){if(!blob){$('export-status').textContent='Image export failed. Please try PDF or text.';return;}downloadBlob(blob,'energy-calculation-RYAN66827.png');$('export-status').textContent='PNG download started, including RYAN66827.';},'image/png');}catch(e){$('export-status').textContent='Image export failed. Please try PDF or text.';}});
 
   restoreFigures();
   update(false);
