@@ -189,11 +189,11 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
 @media(max-width:600px){.usage-controls{grid-template-columns:1fr}.results-panel{padding:14px}.calc-actions .btn{flex:1 1 140px}th,td{padding:12px 8px}body{padding-inline:14px}}
 </style><style>
 .compact-hero{padding-block:16px 24px;gap:24px;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}.compact-hero h1{font-size:clamp(2rem,5vw,3.2rem);margin-bottom:12px}.compact-hero .lede{margin-bottom:0}.compact-code{padding:18px;box-shadow:none}.compact-code .label{margin-bottom:8px}.compact-code .code{font-size:1.65rem;padding:10px}.compact-code .copyrow{gap:8px;margin-top:10px}.compact-code .btn{font-size:14px;padding:10px 12px;flex:1 1 110px}.compact-code .hint{margin:8px 0 0}#calculator{padding-top:24px}#calculator .sub{margin-bottom:16px}.usage-card{margin:16px 0}#saving-breakdown{font-size:15px}#saved-note{margin-bottom:0}@media(max-width:820px){.compact-hero{grid-template-columns:1fr;gap:16px}.compact-code .copyrow{flex-wrap:nowrap}.compact-code .btn{flex:1}}
-</style></head><body>
+</style><style>#print-report{display:none}@media print{@page{margin:16mm}body{padding:0;background:white;color:black}body>*{display:none!important}body>#print-report{display:block!important;font:11pt Arial,sans-serif}#print-report h1{font-size:20pt;color:#a73508}#print-report pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11pt Arial,sans-serif;line-height:1.5}}</style></head><body>
 <a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="wrap">
   <header class="top">
-    <div class="tag">Ryan <span>/ Fuse referral & Calculator</span></div>
+    <div class="tag">Ryan <span>/ Fuse referral</span></div>
     <div class="pill">UK home energy</div>
   </header>
 
@@ -241,6 +241,8 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
           </div>
           <div class="tablewrap"><table><caption>Annual cost breakdown</caption><thead><tr><th scope="col">Cost</th><th scope="col" id="current-column">Current</th><th scope="col" id="fuse-column">Fuse</th></tr></thead><tbody id="breakdown"></tbody></table></div>
           <p class="hint" id="annual-usage"></p>
+          <div class="calc-actions export-actions" aria-label="Export calculation"><button class="btn ghost" type="button" id="export-copy">Copy results</button><button class="btn ghost" type="button" id="export-pdf">Save as PDF / Print</button><button class="btn ghost" type="button" id="export-image">Download PNG</button><button class="btn ghost" type="button" id="export-text">Download text</button></div>
+          <p class="hint">PDF opens your browser’s print dialog: choose “Save as PDF”. Every export includes referral code RYAN66827.</p><p id="export-status" role="status" aria-live="polite"></p><textarea id="export-fallback" aria-label="Results to copy manually" readonly hidden rows="12" style="width:100%;font:inherit"></textarea>
           <p class="hint">Monthly figures are annual costs divided by 12, not a predicted monthly bill or Direct Debit. Assumes unchanged rates and usage over 365 days. Tariff figures exclude referral rewards and exit fees. Any selected referral credit is shown separately above.</p>
         </div>
       </div>
@@ -284,6 +286,7 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
   </footer>
 </div>
 
+<article id="print-report"><h1>Energy bill calculation</h1><pre id="print-report-text"></pre></article>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -368,7 +371,9 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
   function activeTariffs(){return singleMode()?['current']:['current','fuse'];}
   function requiredIds(){var ids=[];activeFuels().forEach(function(f){ids.push(f+'-use');activeTariffs().forEach(function(t){ids.push(t+'-'+f+'-rate',t+'-'+f+'-stand');});});return ids;}
   function valid(id){var el=$(id);return el.value.trim()!=='' && el.validity.valid && Number.isFinite(Number(el.value)) && Number(el.value)>=0;}
+  var exportLines=null;
   function update(showErrors){
+    exportLines=null;$('export-fallback').hidden=true;$('export-status').textContent='';
     var fuels=activeFuels(), single=singleMode();
     $('single-fuse-label').hidden=!single;
     var isFuse=!single||$('single-fuse').checked;
@@ -422,6 +427,13 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
     rows.push(['Total',totals.current,totals.fuse]);
     $('breakdown').replaceChildren();rows.forEach(function(row){if(single)row=row.slice(0,2);var tr=document.createElement('tr');row.forEach(function(v,i){var cell=document.createElement(i===0?'th':'td');if(i===0)cell.scope='row';cell.textContent=i===0?v:gbp.format(v);tr.appendChild(cell);});$('breakdown').appendChild(tr);});
     $('annual-usage').textContent=(single?'Usage used — ':'Usage for both tariffs — ')+annual.join(' · ')+(period!=='365'?'. Annualised from the period selected.':'');
+    exportLines=['Energy bill calculation', 'Created: '+new Date().toLocaleString('en-GB'), 'Referral code: RYAN66827', 'https://fuseenergyreferralcode.co.uk/', '', 'Annual usage: '+annual.join(' · '), 'Entered usage period: '+$('usage-period').options[$('usage-period').selectedIndex].text, ''];
+    activeTariffs().forEach(function(t){exportLines.push(t==='fuse'?'YOUR FUSE QUOTE':single?($('single-fuse').checked?'YOUR FUSE TARIFF':'YOUR TARIFF'):'YOUR CURRENT TARIFF');fuels.forEach(function(f){exportLines.push((f==='e'?'Electricity':'Gas')+': '+$(t+'-'+f+'-rate').value+'p/kWh; standing charge '+$(t+'-'+f+'-stand').value+'p/day');});exportLines.push('Annual cost: '+gbp.format(totals[t]), 'Average monthly cost: '+gbp.format(totals[t]/12), '');});
+    exportLines.push('ANNUAL BREAKDOWN');rows.forEach(function(row){exportLines.push(row[0]+': '+gbp.format(row[1])+(single?'':' current / '+gbp.format(row[2])+' Fuse'));});
+    if(!single)exportLines.push('', $('saving-label').textContent, $('saving-value').textContent, $('saving-month').textContent);
+    if(isFuse && $('include-credit').checked)exportLines.push('', 'REFERRAL CREDIT: RYAN66827', 'One-off bill credit: −£100.00', 'First-year Fuse cost after credit: '+gbp.format(after), 'Assumes eligibility and receipt within the first year.', 'Credit is not cash or a recurring discount; unused credit applies to future bills.');
+    exportLines.push('', 'Estimates only. VAT-inclusive rates assumed unchanged for 365 days.', 'Monthly tariff costs are annual costs / 12, excluding referral credit.', 'Exit fees excluded. Single-rate tariffs only.', 'Referral credit is subject to Fuse terms and paying the first full month’s bill on time.', 'Independent customer calculator. The referrer also receives a reward.', 'Referral code: RYAN66827');
+
   }
   var storageKey='ryan-energy-calculator-v1';
   var savedIds=['mode-compare','mode-single','fuel-choice','usage-period','single-fuse','include-credit','e-use','g-use','current-e-rate','current-e-stand','current-g-rate','current-g-stand','fuse-e-rate','fuse-e-stand','fuse-g-rate','fuse-g-stand'];
@@ -431,6 +443,15 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; background: v
   form.addEventListener('submit',function(ev){ev.preventDefault();update(true);if(!$('result-content').hidden)$('results').scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});});
   $('example').addEventListener('click',function(){var single=singleMode();form.reset();$('mode-single').checked=single;$('mode-compare').checked=!single;var examples={'e-use':2700,'g-use':11500,'current-e-rate':27,'current-e-stand':50,'current-g-rate':7,'current-g-stand':30,'fuse-e-rate':25,'fuse-e-stand':45,'fuse-g-rate':6.5,'fuse-g-stand':28};Object.keys(examples).forEach(function(id){$(id).value=examples[id];});$('input-note').textContent='Illustrative example only — these are not live supplier prices. Replace all figures with your own usage and tariff or quote rates.';update(false);});
   $('clear-figures').addEventListener('click',function(){try{localStorage.removeItem(storageKey);}catch(e){}$('saved-note').textContent='Figures cleared from this page and this device.';var single=singleMode();form.reset();$('mode-single').checked=single;$('mode-compare').checked=!single;$('input-note').textContent='Enter rates in pence: for £0.25 per kWh, enter 25. Zero is accepted. Both tariffs use the same usage.';update(false);});
+
+  function currentExport(){update(false);if(!exportLines){$('export-status').textContent='Complete the calculator before exporting.';return null;}return exportLines.join('\n');}
+  function downloadBlob(blob,name){var url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(function(){URL.revokeObjectURL(url);},30000);}
+  $('export-copy').addEventListener('click',async function(){var report=currentExport();if(!report)return;try{if(!navigator.clipboard)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(report);$('export-status').textContent='Results copied, including RYAN66827.';}catch(e){$('export-fallback').value=report;$('export-fallback').hidden=false;$('export-fallback').focus();$('export-fallback').select();$('export-status').textContent='Select and copy the results below using your device’s copy command.';}});
+  $('export-pdf').addEventListener('click',function(){var report=currentExport();if(!report)return;$('print-report-text').textContent=report;window.print();});
+  window.addEventListener('beforeprint',function(){if(exportLines)$('print-report-text').textContent=exportLines.join('\n');else $('print-report-text').textContent='Complete the calculator to print results. Referral code: RYAN66827';});
+  $('export-text').addEventListener('click',function(){var report=currentExport();if(!report)return;downloadBlob(new Blob([report],{type:'text/plain;charset=utf-8'}),'energy-calculation-RYAN66827.txt');$('export-status').textContent='Text download started.';});
+  $('export-image').addEventListener('click',function(){var report=currentExport();if(!report)return;try{var canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');canvas.width=1200;ctx.font='24px Arial';var lines=[];report.split('\n').forEach(function(line){var wrapped='';line.split(' ').forEach(function(word){var next=wrapped?wrapped+' '+word:word;if(ctx.measureText(next).width>1080 && wrapped){lines.push(wrapped);wrapped=word;}else wrapped=next;});lines.push(wrapped);});canvas.height=170+lines.length*36;ctx.fillStyle='#fff3e6';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#c2410c';ctx.font='bold 34px Arial';ctx.fillText('Energy bill calculator · RYAN66827',60,65);ctx.fillStyle='#2a1608';ctx.font='24px Arial';lines.forEach(function(line,i){ctx.fillText(line,60,125+i*36);});canvas.toBlob(function(blob){if(!blob){$('export-status').textContent='Image export failed. Please try PDF or text.';return;}downloadBlob(blob,'energy-calculation-RYAN66827.png');$('export-status').textContent='PNG download started, including RYAN66827.';},'image/png');}catch(e){$('export-status').textContent='Image export failed. Please try PDF or text.';}});
+
   restoreFigures();
   update(false);
 
